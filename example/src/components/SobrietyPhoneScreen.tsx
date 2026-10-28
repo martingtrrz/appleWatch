@@ -33,17 +33,22 @@ export const SobrietyPhoneScreen: React.FC = () => {
     relapseVerse,
     isVerseLoading,
     sponsor,
+    hasSponsor,
+    updateSponsor,
     isCallingSponsor,
     triggerRelapseSOS,
     dismissRelapseSOS,
     startCallSponsor,
     endCallSponsor,
+    messageSponsor,
     fetchNewVerse,
   } = useSobriety();
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showEditDateModal, setShowEditDateModal] = useState(false);
+  const [showSponsorModal, setShowSponsorModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Form states for adding
   const [newTitle, setNewTitle] = useState('');
@@ -55,20 +60,12 @@ export const SobrietyPhoneScreen: React.FC = () => {
   // Edit date input
   const [customDaysAgo, setCustomDaysAgo] = useState('');
 
+  // Sponsor form
+  const [sponsorName, setSponsorName] = useState('');
+  const [sponsorPhone, setSponsorPhone] = useState('');
+
   const hh = now.getHours().toString().padStart(2, '0');
   const mm = now.getMinutes().toString().padStart(2, '0');
-
-  if (!activeTracker) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.emptyPrompt}>No hay metas activas.</Text>
-      </View>
-    );
-  }
-
-  const elapsed = calculateElapsed(activeTracker.startDate, now);
-  const { next, progressPct } = getNextMilestone(elapsed.days);
-  const totalHours = Math.floor(elapsed.totalSeconds / 3600);
 
   const handleSelectPreset = (preset: (typeof TRACKER_PRESETS)[0]) => {
     setNewTitle(preset.title);
@@ -99,6 +96,7 @@ export const SobrietyPhoneScreen: React.FC = () => {
   };
 
   const handleApplyCustomDays = () => {
+    if (!activeTracker) return;
     const days = parseInt(customDaysAgo, 10);
     if (!isNaN(days) && days >= 0) {
       const newStart = new Date(Date.now() - days * 86400000).toISOString();
@@ -107,6 +105,192 @@ export const SobrietyPhoneScreen: React.FC = () => {
       setCustomDaysAgo('');
     }
   };
+
+  const openSponsorModal = () => {
+    setSponsorName(sponsor.name);
+    setSponsorPhone(sponsor.phone);
+    setShowSponsorModal(true);
+  };
+
+  const handleSaveSponsor = () => {
+    updateSponsor({ name: sponsorName, role: sponsor.role, phone: sponsorPhone });
+    setShowSponsorModal(false);
+  };
+
+  const addTrackerModal = (
+      <Modal visible={showAddModal} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalBox, { maxHeight: '90%' }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalTitle}>Nueva Meta de Sobriedad</Text>
+              <Text style={styles.presetHeading}>Sugerencias rápidas:</Text>
+              <View style={styles.presetGrid}>
+                {TRACKER_PRESETS.map((p) => (
+                  <TouchableOpacity
+                    key={p.title}
+                    onPress={() => handleSelectPreset(p)}
+                    style={[
+                      styles.presetChip,
+                      newTitle === p.title && {
+                        borderColor: p.color,
+                        backgroundColor: `${p.color}22`,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.presetDot, { backgroundColor: p.color }]} />
+                    <Text style={styles.presetChipText}>{p.title}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <Text style={styles.inputLabel}>Nombre del hábito / meta:</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={newTitle}
+                onChangeText={setNewTitle}
+                placeholder="Ej. Alcohol, Bebidas energéticas..."
+                placeholderTextColor="#6B7280"
+              />
+              <Text style={styles.inputLabel}>Sigla corta (ej. ALC, NIC):</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={newTag}
+                onChangeText={setNewTag}
+                maxLength={4}
+                placeholder="ALC"
+                placeholderTextColor="#6B7280"
+                autoCapitalize="characters"
+              />
+              <Text style={styles.inputLabel}>¿Cuántos días llevas ya? (0 si comienzas hoy):</Text>
+              <TextInput
+                style={styles.modalInput}
+                keyboardType="number-pad"
+                value={daysAgoInput}
+                onChangeText={setDaysAgoInput}
+                placeholder="0"
+                placeholderTextColor="#6B7280"
+              />
+              <Text style={styles.inputLabel}>Color distintivo:</Text>
+              <View style={styles.colorsRow}>
+                {TRACKER_COLORS.map((c) => (
+                  <TouchableOpacity
+                    key={c}
+                    onPress={() => setNewColor(c)}
+                    style={[
+                      styles.colorDot,
+                      { backgroundColor: c },
+                      newColor === c && styles.colorDotSelected,
+                    ]}
+                  />
+                ))}
+              </View>
+              <View style={[styles.modalButtons, { marginTop: 16 }]}>
+                <TouchableOpacity
+                  onPress={() => setShowAddModal(false)}
+                  style={styles.modalBtnCancel}
+                >
+                  <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleCreateTracker}
+                  style={[styles.modalBtnConfirm, { backgroundColor: newColor }]}
+                >
+                  <Text style={[styles.modalBtnConfirmText, { color: '#000000' }]}>
+                    Comenzar
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+  );
+
+  const sponsorModal = (
+      <Modal visible={showSponsorModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle} accessibilityRole="header">
+              Tu persona de apoyo
+            </Text>
+            <Text style={styles.modalBody}>
+              Será quien reciba tu llamada o mensaje cuando actives el SOS. Estos
+              datos se guardan solo en este dispositivo.
+            </Text>
+            <Text style={styles.inputLabel}>Nombre:</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={sponsorName}
+              onChangeText={setSponsorName}
+              placeholder="Ej. Carlos"
+              placeholderTextColor="#9CA3AF"
+              accessibilityLabel="Nombre de tu persona de apoyo"
+            />
+            <Text style={styles.inputLabel}>Teléfono:</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={sponsorPhone}
+              onChangeText={setSponsorPhone}
+              keyboardType="phone-pad"
+              placeholder="+52 55 0000 0000"
+              placeholderTextColor="#9CA3AF"
+              accessibilityLabel="Teléfono de tu persona de apoyo"
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                onPress={() => setShowSponsorModal(false)}
+                style={styles.modalBtnCancel}
+                accessibilityRole="button"
+                accessibilityLabel="Cancelar"
+              >
+                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleSaveSponsor}
+                style={[styles.modalBtnConfirm, { backgroundColor: '#30D158' }]}
+                accessibilityRole="button"
+                accessibilityLabel="Guardar persona de apoyo"
+              >
+                <Text style={[styles.modalBtnConfirmText, { color: '#000000' }]}>
+                  Guardar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+  );
+
+
+  // Onboarding: sin metas guardadas, la primera pantalla invita a crear la primera.
+  if (!activeTracker) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.onboarding}>
+          <Text style={styles.onboardingTitle} accessibilityRole="header">
+            Bienvenido
+          </Text>
+          <Text style={styles.emptyPrompt}>
+            Crea tu primera meta de sobriedad. Tu progreso se guarda en este
+            dispositivo y se muestra también en tu reloj.
+          </Text>
+          <TouchableOpacity
+            onPress={() => setShowAddModal(true)}
+            style={styles.onboardingBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Crear mi primera meta"
+          >
+            <Text style={styles.onboardingBtnText}>Crear mi primera meta</Text>
+          </TouchableOpacity>
+        </View>
+        {addTrackerModal}
+      </View>
+    );
+  }
+
+  const elapsed = calculateElapsed(activeTracker.startDate, now);
+  const { next, progressPct } = getNextMilestone(elapsed.days);
+  const totalHours = Math.floor(elapsed.totalSeconds / 3600);
+
 
   return (
     <View style={styles.container}>
@@ -133,6 +317,8 @@ export const SobrietyPhoneScreen: React.FC = () => {
           onPress={() => setShowAddModal(true)}
           style={styles.addButton}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Agregar nueva meta"
         >
           <Text style={styles.addButtonText}>+</Text>
         </TouchableOpacity>
@@ -147,7 +333,7 @@ export const SobrietyPhoneScreen: React.FC = () => {
         {/* SECCIÓN SINCRONIZADA: ALERTA SOS RECIBIDA DESDE EL WATCH */}
         {/* ======================================================== */}
         {isRelapseActive && (
-          <View style={styles.sosCard}>
+          <View style={styles.sosCard} accessibilityLiveRegion="assertive">
             <View style={styles.sosBannerHeader}>
               <View style={styles.sosHeaderPulse}>
                 <View style={styles.sosPulseDot} />
@@ -155,7 +341,9 @@ export const SobrietyPhoneScreen: React.FC = () => {
               </View>
               <TouchableOpacity
                 onPress={dismissRelapseSOS}
-                style={styles.sosCloseBtn}
+                style={[styles.sosCloseBtn, { minHeight: 44, justifyContent: 'center', paddingHorizontal: 12 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Cerrar alerta SOS"
               >
                 <Text style={styles.sosCloseText}>Cerrar</Text>
               </TouchableOpacity>
@@ -167,47 +355,78 @@ export const SobrietyPhoneScreen: React.FC = () => {
 
             {/* Sub-sección 1: Llamar Padrino */}
             <View style={styles.sosSponsorBox}>
-              <View style={styles.sosSponsorTop}>
-                <View style={styles.sponsorInitialCircle}>
-                  <Text style={styles.sponsorInitialText}>{sponsor.name.charAt(0)}</Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sponsorName}>{sponsor.name}</Text>
-                  <Text style={styles.sponsorRole}>{sponsor.role}</Text>
-                  <Text style={styles.sponsorPhone}>{sponsor.phone}</Text>
-                </View>
-                {isCallingSponsor && (
-                  <View style={styles.activeCallBadge}>
-                    <Text style={styles.activeCallBadgeText}>EN LLAMADA</Text>
+              {hasSponsor ? (
+                <>
+                  <View style={styles.sosSponsorTop}>
+                    <View style={styles.sponsorInitialCircle}>
+                      <Text style={styles.sponsorInitialText}>
+                        {(sponsor.name || sponsor.phone).charAt(0)}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.sponsorName}>{sponsor.name || 'Persona de apoyo'}</Text>
+                      <Text style={styles.sponsorRole}>{sponsor.role}</Text>
+                      <Text style={styles.sponsorPhone}>{sponsor.phone}</Text>
+                    </View>
+                    {isCallingSponsor && (
+                      <View style={styles.activeCallBadge}>
+                        <Text style={styles.activeCallBadgeText}>EN LLAMADA</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
 
-              <View style={styles.sponsorActionRow}>
-                {isCallingSponsor ? (
-                  <TouchableOpacity
-                    onPress={endCallSponsor}
-                    style={styles.hangupSponsorBtn}
-                  >
-                    <Text style={styles.hangupSponsorText}>Finalizar Llamada</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity
-                    onPress={startCallSponsor}
-                    style={styles.callSponsorBtn}
-                  >
-                    <Text style={styles.callSponsorText}>Llamar Padrino</Text>
-                  </TouchableOpacity>
-                )}
+                  <View style={styles.sponsorActionRow}>
+                    {isCallingSponsor ? (
+                      <TouchableOpacity
+                        onPress={endCallSponsor}
+                        style={styles.hangupSponsorBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel="Finalizar llamada"
+                      >
+                        <Text style={styles.hangupSponsorText}>Finalizar Llamada</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={startCallSponsor}
+                        style={styles.callSponsorBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Llamar a ${sponsor.name || sponsor.phone}`}
+                      >
+                        <Text style={styles.callSponsorText}>Llamar</Text>
+                      </TouchableOpacity>
+                    )}
 
-                <TouchableOpacity
-                  onPress={() => alert(`Mensaje enviado a ${sponsor.name}: "Necesito apoyo, tengo tentación de recaída."`)}
-                  style={styles.msgSponsorBtn}
-                >
-                  <Text style={styles.msgSponsorText}>Enviar Mensaje</Text>
-                </TouchableOpacity>
-              </View>
+                    <TouchableOpacity
+                      onPress={messageSponsor}
+                      style={styles.msgSponsorBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Enviar mensaje de apoyo a ${sponsor.name || sponsor.phone}`}
+                    >
+                      <Text style={styles.msgSponsorText}>Enviar Mensaje</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.sponsorRole}>
+                    Aún no has configurado a nadie de confianza.
+                  </Text>
+                  <TouchableOpacity
+                    onPress={openSponsorModal}
+                    style={styles.sponsorSetupBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Configurar persona de apoyo"
+                  >
+                    <Text style={styles.sponsorSetupBtnText}>Configurar persona de apoyo</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+              <Text style={styles.crisisNote}>
+                Si sientes que estás en peligro, busca ayuda profesional. En México:
+                Línea de la Vida 800 911 2000 (24 h, gratuita).
+              </Text>
             </View>
+
 
             {/* Sub-sección 2: Perla de hoy (biblia.json) */}
             <View style={styles.sosBibleBox}>
@@ -273,8 +492,12 @@ export const SobrietyPhoneScreen: React.FC = () => {
                 key={t.id}
                 onPress={() => selectTracker(t.id)}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={`Meta ${t.title}${isSelected ? ', seleccionada, se muestra en el reloj' : ''}`}
+                accessibilityState={{ selected: isSelected }}
                 style={[
                   styles.trackerPill,
+                  { minHeight: 44 },
                   isSelected && [
                     styles.trackerPillActive,
                     { borderColor: t.color, backgroundColor: `${t.color}22` },
@@ -380,6 +603,17 @@ export const SobrietyPhoneScreen: React.FC = () => {
               {totalHours.toLocaleString()} horas
             </Text>
           </View>
+          {(activeTracker.bestStreakDays ?? 0) > 0 && (
+            <View style={styles.dateMetaRow}>
+              <Text style={styles.dateMetaLabel}>Mejor racha anterior:</Text>
+              <Text style={styles.dateMetaValue}>
+                {activeTracker.bestStreakDays} días
+                {activeTracker.relapseCount
+                  ? ` · ${activeTracker.relapseCount} ${activeTracker.relapseCount === 1 ? 'reinicio' : 'reinicios'}`
+                  : ''}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Progreso de la Próxima Meta */}
@@ -417,6 +651,8 @@ export const SobrietyPhoneScreen: React.FC = () => {
               return (
                 <View
                   key={m.days}
+                  accessible
+                  accessibilityLabel={`Ficha de ${m.label}: ${unlocked ? 'lograda' : 'pendiente'}`}
                   style={[
                     styles.milestoneBadge,
                     unlocked && [
@@ -468,6 +704,8 @@ export const SobrietyPhoneScreen: React.FC = () => {
             }}
             style={styles.actionBtnOutline}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="Ajustar días o fecha de inicio"
           >
             <Text style={styles.actionBtnOutlineText}>Ajustar Días / Fecha</Text>
           </TouchableOpacity>
@@ -476,19 +714,37 @@ export const SobrietyPhoneScreen: React.FC = () => {
             onPress={() => triggerRelapseSOS()}
             style={styles.actionBtnSOS}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel="SOS: necesito ayuda por tentación de recaída"
           >
             <Text style={styles.actionBtnSOSText}>SOS Recaída</Text>
           </TouchableOpacity>
         </View>
 
-        {trackers.length > 1 && (
-          <TouchableOpacity
-            onPress={() => deleteTracker(activeTracker.id)}
-            style={styles.deleteLink}
-          >
-            <Text style={styles.deleteLinkText}>Eliminar esta meta</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          onPress={openSponsorModal}
+          style={styles.sponsorSetupBtn}
+          accessibilityRole="button"
+          accessibilityLabel={
+            hasSponsor
+              ? `Editar persona de apoyo: ${sponsor.name}`
+              : 'Configurar persona de apoyo'
+          }
+        >
+          <Text style={styles.sponsorSetupBtnText}>
+            {hasSponsor ? `Persona de apoyo: ${sponsor.name || sponsor.phone}` : 'Configurar persona de apoyo'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={() => setShowDeleteModal(true)}
+          style={styles.deleteLink}
+          accessibilityRole="button"
+          accessibilityLabel={`Eliminar la meta ${activeTracker.title}`}
+        >
+          <Text style={styles.deleteLinkText}>Eliminar esta meta</Text>
+        </TouchableOpacity>
+
       </ScrollView>
 
       {/* Modal: Confirmar Reinicio por Recaída */}
@@ -560,98 +816,47 @@ export const SobrietyPhoneScreen: React.FC = () => {
         </View>
       </Modal>
 
-      {/* Modal: Crear Nueva Meta */}
-      <Modal visible={showAddModal} transparent animationType="slide">
+      {addTrackerModal}
+
+      {sponsorModal}
+
+      {/* Modal: Confirmar eliminar meta */}
+      <Modal visible={showDeleteModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalBox, { maxHeight: '90%' }]}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.modalTitle}>Nueva Meta de Sobriedad</Text>
-              <Text style={styles.presetHeading}>Sugerencias rápidas:</Text>
-              <View style={styles.presetGrid}>
-                {TRACKER_PRESETS.map((p) => (
-                  <TouchableOpacity
-                    key={p.title}
-                    onPress={() => handleSelectPreset(p)}
-                    style={[
-                      styles.presetChip,
-                      newTitle === p.title && {
-                        borderColor: p.color,
-                        backgroundColor: `${p.color}22`,
-                      },
-                    ]}
-                  >
-                    <View style={[styles.presetDot, { backgroundColor: p.color }]} />
-                    <Text style={styles.presetChipText}>{p.title}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.inputLabel}>Nombre del hábito / meta:</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={newTitle}
-                onChangeText={setNewTitle}
-                placeholder="Ej. Alcohol, Bebidas energéticas..."
-                placeholderTextColor="#6B7280"
-              />
-
-              <Text style={styles.inputLabel}>Sigla corta (ej. ALC, NIC):</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={newTag}
-                onChangeText={setNewTag}
-                maxLength={4}
-                placeholder="ALC"
-                placeholderTextColor="#6B7280"
-                autoCapitalize="characters"
-              />
-
-              <Text style={styles.inputLabel}>¿Cuántos días llevas ya? (0 si comienzas hoy):</Text>
-              <TextInput
-                style={styles.modalInput}
-                keyboardType="number-pad"
-                value={daysAgoInput}
-                onChangeText={setDaysAgoInput}
-                placeholder="0"
-                placeholderTextColor="#6B7280"
-              />
-
-              <Text style={styles.inputLabel}>Color distintivo:</Text>
-              <View style={styles.colorsRow}>
-                {TRACKER_COLORS.map((c) => (
-                  <TouchableOpacity
-                    key={c}
-                    onPress={() => setNewColor(c)}
-                    style={[
-                      styles.colorDot,
-                      { backgroundColor: c },
-                      newColor === c && styles.colorDotSelected,
-                    ]}
-                  />
-                ))}
-              </View>
-
-              <View style={[styles.modalButtons, { marginTop: 16 }]}>
-                <TouchableOpacity
-                  onPress={() => setShowAddModal(false)}
-                  style={styles.modalBtnCancel}
-                >
-                  <Text style={styles.modalBtnCancelText}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleCreateTracker}
-                  style={[styles.modalBtnConfirm, { backgroundColor: newColor }]}
-                >
-                  <Text style={[styles.modalBtnConfirmText, { color: '#000000' }]}>
-                    Comenzar
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle} accessibilityRole="header">
+              ¿Eliminar esta meta?
+            </Text>
+            <Text style={styles.modalBody}>
+              Se borrará "{activeTracker?.title}" con todo su progreso. Esta acción
+              no se puede deshacer.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                onPress={() => setShowDeleteModal(false)}
+                style={styles.modalBtnCancel}
+                accessibilityRole="button"
+                accessibilityLabel="Cancelar"
+              >
+                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  if (activeTracker) deleteTracker(activeTracker.id);
+                  setShowDeleteModal(false);
+                }}
+                style={styles.modalBtnConfirm}
+                accessibilityRole="button"
+                accessibilityLabel="Confirmar eliminar meta"
+              >
+                <Text style={styles.modalBtnConfirmText}>Eliminar</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
     </View>
+
   );
 };
 
@@ -718,9 +923,9 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   addButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#1F2937',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1179,8 +1384,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   chipStatus: {
-    color: '#6B7280',
-    fontSize: 8,
+    color: '#9CA3AF',
+    fontSize: 10,
     marginTop: 2,
     fontWeight: '600',
   },
@@ -1192,7 +1397,8 @@ const styles = StyleSheet.create({
   actionBtnOutline: {
     flex: 1,
     backgroundColor: '#1F2937',
-    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 10,
     alignItems: 'center',
   },
@@ -1206,7 +1412,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 69, 58, 0.15)',
     borderWidth: 1,
     borderColor: '#FF453A',
-    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 10,
     alignItems: 'center',
   },
@@ -1217,11 +1424,12 @@ const styles = StyleSheet.create({
   },
   deleteLink: {
     alignItems: 'center',
-    paddingVertical: 6,
+    justifyContent: 'center',
+    minHeight: 44,
   },
   deleteLinkText: {
-    color: '#6B7280',
-    fontSize: 11,
+    color: '#9CA3AF',
+    fontSize: 12,
     textDecorationLine: 'underline',
   },
   modalOverlay: {
@@ -1270,7 +1478,8 @@ const styles = StyleSheet.create({
   modalBtnCancel: {
     flex: 1,
     backgroundColor: '#2A2E39',
-    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 10,
     alignItems: 'center',
   },
@@ -1282,7 +1491,8 @@ const styles = StyleSheet.create({
   modalBtnConfirm: {
     flex: 1,
     backgroundColor: '#FF453A',
-    paddingVertical: 10,
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 10,
     alignItems: 'center',
   },
@@ -1348,9 +1558,62 @@ const styles = StyleSheet.create({
     transform: [{ scale: 1.15 }],
   },
   emptyPrompt: {
-    color: '#6B7280',
+    color: '#9CA3AF',
     textAlign: 'center',
-    marginTop: 40,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 18,
+  },
+  onboarding: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  onboardingTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  onboardingBtn: {
+    minHeight: 48,
+    minWidth: 200,
+    backgroundColor: '#30D158',
+    borderRadius: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  onboardingBtnText: {
+    color: '#000000',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  sponsorSetupBtn: {
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#0A84FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  sponsorSetupBtnText: {
+    color: '#64D2FF',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  streakText: {
+    color: '#D1D5DB',
+    fontSize: 12,
+  },
+  crisisNote: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 4,
   },
 });

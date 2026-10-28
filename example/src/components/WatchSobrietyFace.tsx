@@ -22,6 +22,7 @@ export const WatchSobrietyFace: React.FC = () => {
     relapseVerse,
     isVerseLoading,
     sponsor,
+    hasSponsor,
     isCallingSponsor,
     triggerRelapseSOS,
     dismissRelapseSOS,
@@ -189,14 +190,20 @@ export const WatchSobrietyFace: React.FC = () => {
         <View style={styles.sosOptionsColumn}>
           {/* Opción 1: Llamar Padrino */}
           <TouchableOpacity
-            onPress={handleStartCall}
-            style={styles.sosOptionItemPrimary}
-            activeOpacity={0.8}
+            onPress={hasSponsor ? handleStartCall : undefined}
+            style={[styles.sosOptionItemPrimary, !hasSponsor && { opacity: 0.6 }]}
+            activeOpacity={hasSponsor ? 0.8 : 1}
+            accessibilityRole="button"
+            accessibilityLabel={hasSponsor ? `Llamar padrino: ${sponsor.name}` : 'Padrino no configurado en iPhone'}
           >
             <View style={styles.sosOptionLeftIndicatorBlue} />
             <View style={styles.sosOptionTexts}>
-              <Text style={styles.sosOptionHeading}>LLAMAR PADRINO</Text>
-              <Text style={styles.sosOptionSubtext}>{sponsor.name}</Text>
+              <Text style={styles.sosOptionHeading}>
+                {hasSponsor ? 'LLAMAR PADRINO' : 'SIN PADRINO'}
+              </Text>
+              <Text style={styles.sosOptionSubtext}>
+                {hasSponsor ? (sponsor.name || sponsor.phone) : 'Configura en iPhone'}
+              </Text>
             </View>
             <Text style={styles.chevronText}>›</Text>
           </TouchableOpacity>
@@ -331,6 +338,8 @@ export const WatchSobrietyFace: React.FC = () => {
           onPress={handleOpenRelapseMenu}
           style={styles.sosPillButton}
           activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel="SOS Asistencia por recaída o tentación"
         >
           <View style={styles.sosBeaconDot} />
           <Text style={styles.sosPillButtonText}>RECAÍDA</Text>

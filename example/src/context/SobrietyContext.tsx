@@ -6,8 +6,16 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import { Linking } from 'react-native';
 import type { SobrietyTracker, BibleVerse, SponsorContact } from '../types';
 import { getRandomVerse } from '../services/bibleService';
+import { loadJSON, saveJSON } from '../utils/storage';
+
+const STORAGE_KEYS = {
+  trackers: 'sobriety.trackers.v1',
+  activeId: 'sobriety.activeId.v1',
+  sponsor: 'sobriety.sponsor.v1',
+};
 
 interface SobrietyContextValue {
   trackers: SobrietyTracker[];
@@ -31,77 +39,61 @@ interface SobrietyContextValue {
   relapseVerse: BibleVerse | null;
   isVerseLoading: boolean;
   sponsor: SponsorContact;
+  hasSponsor: boolean;
+  updateSponsor: (sponsor: SponsorContact) => void;
   isCallingSponsor: boolean;
   triggerRelapseSOS: () => Promise<void>;
   dismissRelapseSOS: () => void;
   startCallSponsor: () => void;
   endCallSponsor: () => void;
+  messageSponsor: () => void;
   fetchNewVerse: () => Promise<void>;
 }
 
 const SobrietyContext = createContext<SobrietyContextValue | null>(null);
 
-const DEFAULT_SPONSOR: SponsorContact = {
-  name: 'Carlos Mendoza',
-  role: 'Padrino / Mentor de Sobriedad',
-  phone: '+52 55 4190 2831',
+// Sin padrino por defecto: el usuario lo configura en la app.
+const EMPTY_SPONSOR: SponsorContact = {
+  name: '',
+  role: 'Padrino / Persona de apoyo',
+  phone: '',
 };
 
-// Fechas iniciales por defecto (hace 42 días para Alcohol, 18 días para Tabaco, 5 días para Azúcar)
-const createInitialTrackers = (): SobrietyTracker[] => {
-  const now = new Date();
-  const dateAlcohol = new Date(now.getTime() - 42 * 86400000 - 14 * 3600000 - 25 * 60000);
-  const dateTabaco = new Date(now.getTime() - 18 * 86400000 - 6 * 3600000);
-  const dateAzucar = new Date(now.getTime() - 5 * 86400000 - 18 * 3600000);
+const SOS_MESSAGE = 'Necesito apoyo, tengo tentación de recaída.';
 
-  return [
-    {
-      id: 'tracker-alcohol',
-      title: 'Alcohol',
-      category: 'Bebidas',
-      startDate: dateAlcohol.toISOString(),
-      color: '#30D158',
-      tag: 'ALC',
-      pledge: 'Un día a la vez, por mi salud y bienestar.',
-    },
-    {
-      id: 'tracker-tabaco',
-      title: 'Tabaco / Nicotina',
-      category: 'Salud Pulmonar',
-      startDate: dateTabaco.toISOString(),
-      color: '#0A84FF',
-      tag: 'NIC',
-      pledge: 'Respirar limpio y con claridad.',
-    },
-    {
-      id: 'tracker-azucar',
-      title: 'Azúcar Refinada',
-      category: 'Alimentación',
-      startDate: dateAzucar.toISOString(),
-      color: '#FF9F0A',
-      tag: 'AZU',
-      pledge: 'Energía constante y enfoque.',
-    },
-  ];
-};
+const cleanPhone = (phone: string) => phone.replace(/[^\d+]/g, '');
 
 export const SobrietyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [trackers, setTrackers] = useState<SobrietyTracker[]>(createInitialTrackers);
-  const [activeId, setActiveId] = useState<string>('tracker-alcohol');
+  // Las metas arrancan vacías (onboarding) y se restauran desde el almacenamiento.
+  const [trackers, setTrackers] = useState<SobrietyTracker[]>(() =>
+    loadJSON<SobrietyTracker[]>(STORAGE_KEYS.trackers, [])
+  );
+  const [activeId, setActiveId] = useState<string>(() =>
+    loadJSON<string>(STORAGE_KEYS.activeId, '')
+  );
+  const [sponsor, setSponsor] = useState<SponsorContact>(() =>
+    loadJSON<SponsorContact>(STORAGE_KEYS.sponsor, EMPTY_SPONSOR)
+  );
   const [now, setNow] = useState<Date>(new Date());
 
   // Estados de Asistencia por Recaída
   const [isRelapseActive, setIsRelapseActive] = useState<boolean>(false);
   const [relapseVerse, setRelapseVerse] = useState<BibleVerse | null>(null);
   const [isVerseLoading, setIsVerseLoading] = useState<boolean>(false);
-  const [sponsor] = useState<SponsorContact>(DEFAULT_SPONSOR);
   const [isCallingSponsor, setIsCallingSponsor] = useState<boolean>(false);
+
+  // Persistencia automática
+  useEffect(() => saveJSON(STORAGE_KEYS.trackers, trackers), [trackers]);
+  useEffect(() => saveJSON(STORAGE_KEYS.activeId, activeId), [activeId]);
+  useEffect(() => saveJSON(STORAGE_KEYS.sponsor, sponsor), [sponsor]);
 
   // Actualiza la hora cada segundo para cálculo exacto de días, horas, minutos y segundos
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const hasSponsor = sponsor.phone.trim().length > 0;
 
   const activeTracker = useMemo(
     () => trackers.find((t) => t.id === activeId) ?? trackers[0] ?? null,
@@ -119,10 +111,23 @@ export const SobrietyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setActiveId(trackers[nextIdx].id);
   }, [trackers, activeTracker]);
 
+  // Reinicio por recaída: se conserva la mejor racha y el número de recaídas.
   const resetTracker = useCallback((id: string) => {
-    const freshDate = new Date().toISOString();
+    const nowMs = Date.now();
     setTrackers((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, startDate: freshDate } : t))
+      prev.map((t) => {
+        if (t.id !== id) return t;
+        const daysDone = Math.max(
+          0,
+          Math.floor((nowMs - new Date(t.startDate).getTime()) / 86400000)
+        );
+        return {
+          ...t,
+          startDate: new Date(nowMs).toISOString(),
+          bestStreakDays: Math.max(t.bestStreakDays ?? 0, daysDone),
+          relapseCount: (t.relapseCount ?? 0) + 1,
+        };
+      })
     );
   }, []);
 
@@ -157,16 +162,22 @@ export const SobrietyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const deleteTracker = useCallback(
     (id: string) => {
-      setTrackers((prev) => {
-        const filtered = prev.filter((t) => t.id !== id);
-        if (activeId === id && filtered.length > 0) {
-          setActiveId(filtered[0].id);
-        }
-        return filtered;
-      });
+      const filtered = trackers.filter((t) => t.id !== id);
+      setTrackers(filtered);
+      if (activeId === id) {
+        setActiveId(filtered[0]?.id ?? '');
+      }
     },
-    [activeId]
+    [trackers, activeId]
   );
+
+  const updateSponsor = useCallback((next: SponsorContact) => {
+    setSponsor({
+      name: next.name.trim(),
+      role: next.role.trim() || EMPTY_SPONSOR.role,
+      phone: next.phone.trim(),
+    });
+  }, []);
 
   const fetchNewVerse = useCallback(async () => {
     setIsVerseLoading(true);
@@ -190,13 +201,26 @@ export const SobrietyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setIsCallingSponsor(false);
   }, []);
 
+  // Llamada real: abre el marcador del sistema con el número del padrino.
   const startCallSponsor = useCallback(() => {
+    if (!hasSponsor) return;
     setIsCallingSponsor(true);
-  }, []);
+    Linking.openURL(`tel:${cleanPhone(sponsor.phone)}`).catch((e) =>
+      console.warn('No se pudo iniciar la llamada:', e)
+    );
+  }, [hasSponsor, sponsor.phone]);
 
   const endCallSponsor = useCallback(() => {
     setIsCallingSponsor(false);
   }, []);
+
+  // Mensaje real: abre la app de SMS con el texto de ayuda ya escrito.
+  const messageSponsor = useCallback(() => {
+    if (!hasSponsor) return;
+    Linking.openURL(
+      `sms:${cleanPhone(sponsor.phone)}?body=${encodeURIComponent(SOS_MESSAGE)}`
+    ).catch((e) => console.warn('No se pudo abrir SMS:', e));
+  }, [hasSponsor, sponsor.phone]);
 
   const value = useMemo(
     () => ({
@@ -213,11 +237,14 @@ export const SobrietyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       relapseVerse,
       isVerseLoading,
       sponsor,
+      hasSponsor,
+      updateSponsor,
       isCallingSponsor,
       triggerRelapseSOS,
       dismissRelapseSOS,
       startCallSponsor,
       endCallSponsor,
+      messageSponsor,
       fetchNewVerse,
     }),
     [
@@ -234,11 +261,14 @@ export const SobrietyProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       relapseVerse,
       isVerseLoading,
       sponsor,
+      hasSponsor,
+      updateSponsor,
       isCallingSponsor,
       triggerRelapseSOS,
       dismissRelapseSOS,
       startCallSponsor,
       endCallSponsor,
+      messageSponsor,
       fetchNewVerse,
     ]
   );

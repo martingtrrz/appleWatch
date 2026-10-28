@@ -6,6 +6,8 @@ export interface SobrietyTracker {
   color: string;
   tag: string; // Acronym or short text like "ALC", "NIC", "AZU"
   pledge?: string;
+  bestStreakDays?: number; // mejor racha previa a un reinicio
+  relapseCount?: number;
 }
 
 export interface Milestone {

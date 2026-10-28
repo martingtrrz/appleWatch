@@ -67,12 +67,8 @@ async function loadBibleData(): Promise<any> {
 
   fetchPromise = (async () => {
     try {
-      // 1. Intentar cargar desde el archivo público servido por Vite
-      let response = await fetch('/biblia.json');
-      if (!response.ok) {
-        // Fallback a ruta de componentes
-        response = await fetch('/src/components/biblia.json');
-      }
+      // 1. Cargar desde la carpeta pública servida por el bundler
+      const response = await fetch('/biblia.json');
       if (response.ok) {
         cachedBibleData = await response.json();
         return cachedBibleData;
